@@ -84,6 +84,10 @@ class Simulator(object):
                self.qoe_metric.variance_weight * variance + \
                self.qoe_metric.startup_weight * start_up_time + \
                self.qoe_metric.latency_weight * average_latency
+    
+    def get_mpd(self):
+        return qoe_metric
+
 
     # run the simulation for the whole process
     def run(self):
