@@ -10,4 +10,4 @@ class SpeedController:
 
     def get_next_speed(self):
         # modify your algorithm here
-        return 1
+        return 1.0

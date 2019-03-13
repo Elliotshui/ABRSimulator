@@ -17,7 +17,8 @@ class MPD(object):
         self.chunks = chunks
 
 class QOEMetric(object):
-    def __init__(self, rebuffer_weight, variance_weight, startup_weight, latency_weight):
+    def __init__(self, bitrate_weight, rebuffer_weight, variance_weight, startup_weight, latency_weight):
+        self.bitrate_weight = bitrate_weight
         self.rebuffer_weight = rebuffer_weight
         self.variance_weight = variance_weight
         self.startup_weight = startup_weight
@@ -70,7 +71,9 @@ class Simulator(object):
         chunks = []
         for line in f.readlines():
             video_length += 1
-            bitrates = float(line.split())
+            bitrates = []
+            for item in line.split():
+                bitrates.append(float(item))
             chunks.append(Chunk(bitrates))
         self.mpd = MPD(video_length, chunk_length, max_buffer, start_up_length, chunks)
         return
@@ -78,10 +81,16 @@ class Simulator(object):
     def calculate_qoe(self, rebuffer_time, previous_bitrates, start_up_time, average_latency):
         variance = 0
         for i in range(0, self.mpd.video_length - 1):
-            variance += abs(self.mpd.chunks.bitrates[previous_bitrates[i]] - self.mpd.chunks.bitrates[previous_bitrates[i + 1]])
-        return self.qoe_metric.rebuffer_weight * rebuffer_time + \
-               self.qoe_metric.variance_weight * variance + \
-               self.qoe_metric.startup_weight * start_up_time + \
+            variance += abs(self.mpd.chunks[i].bitrates[previous_bitrates[i]] - self.mpd.chunks[i + 1].bitrates[previous_bitrates[i + 1]])
+
+        total_bitrate = 0
+        for i in range(0, self.mpd.video_length):
+            total_bitrate += self.mpd.chunks[i].bitrates[previous_bitrates[i]]
+
+        return self.qoe_metric.bitrate_weight * total_bitrate, \
+               self.qoe_metric.rebuffer_weight * rebuffer_time, \
+               self.qoe_metric.variance_weight * variance, \
+               self.qoe_metric.startup_weight * start_up_time, \
                self.qoe_metric.latency_weight * average_latency
     
     def get_mpd(self):
@@ -142,20 +151,24 @@ class Simulator(object):
                 rebuffer_time += dt
 
             # if the download pauses
-            available_id = int(global_time / self.mpd.chunk_length) - 1
+            available_id = min(int(global_time / self.mpd.chunk_length) - 1, self.mpd.video_length - 1)
             if available_id < chunk_id or buffer_full == True:
                 download_pause = True
+            else:
+                download_pause = False
             
             # if the playback pauses
             if buffer_empty == True or start_up == True:
                 play_pause = True
+            else:
+                play_pause = False
 
             # if downloading, download the video and update the state
             if download_pause == False:                
                 # if downloading a new chunk, call the abr controller to determine the bitrate
                 if download_time == 0:
                     current_bitrate = self.abr_controller.get_next_bitrate(chunk_id, previous_bitrates, previous_bandwidths, buffer_level)
-                    target_size = self.mpd.chunks.bitrates[current_bitrate] * self.mpd.chunk_length             
+                    target_size = self.mpd.chunks[chunk_id].bitrates[current_bitrate] * self.mpd.chunk_length             
                 # calculate the instant bandwidth
                 bandwidth_idx = int(global_time / self.network_info.interval)
                 bandwidth = self.network_info.bandwidths[bandwidth_idx]
@@ -179,7 +192,7 @@ class Simulator(object):
                     play_speed = self.speed_controller.get_next_speed()
                 # calculate instant latency
                 instant_latency = global_time - play_time
-                average_latency = (average_latency * play_time + instant_latency) / (play_time + play_speed * dt)
+                average_latency = (average_latency * play_time + instant_latency * play_speed * dt) / (play_time + play_speed * dt)
                 # update the playback state
                 play_time += play_speed * dt    
                 play_length += play_speed * dt
@@ -206,7 +219,7 @@ class Simulator(object):
             # update global timer
             global_time += dt
 
-            if chunk_id >= self.mpd.video_length:
+            if chunk_id >= self.mpd.video_length and play_id >= self.mpd.video_length:
                 simulation_end = True
             
-            return self.calculate_qoe(rebuffer_time, previous_bitrates, start_up_time, average_latency)
+        return self.calculate_qoe(rebuffer_time, previous_bitrates, start_up_time, average_latency)
