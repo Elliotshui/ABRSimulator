@@ -86,7 +86,10 @@ class Simulator(object):
                self.qoe_metric.latency_weight * average_latency
     
     def get_mpd(self):
-        return qoe_metric
+        return self.mpd
+
+    def get_qoe_metric(self):
+        return self.qoe_metric
 
 
     # run the simulation for the whole process
