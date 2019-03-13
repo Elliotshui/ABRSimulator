@@ -1,4 +1,5 @@
-
+import Plot
+import matplotlib.pyplot as plt
 # bitrates is the list of bitrate available for a chunk
 # normally four or five options, bitrates[0] stands for the lowest
 class Chunk(object):
@@ -143,7 +144,19 @@ class Simulator(object):
         # update the state for every dt second, loop until the end
         dt = 0.01
 
+        # list of info for plotting
+        time_list = []
+        buffer_list = []
+        rebuffer_list = []
+        latency_list = []
+
         while simulation_end == False:
+            # insert plot info
+            time_list.append(global_time)
+            buffer_list.append(buffer_level)
+            rebuffer_list.append(rebuffer_time)
+            latency_list.append(instant_latency)
+            
             # update timers
             if start_up == True:
                 start_up_time += dt
@@ -183,16 +196,16 @@ class Simulator(object):
                     download_time = 0
                     # only update buffer when the whole chunk is downloaded
                     buffer_level += self.mpd.chunk_length
-                
+
+            # calculate instant latency
+            instant_latency = global_time - play_time
+            average_latency = (average_latency * global_time + instant_latency * dt) / (global_time + dt)    
             
             # if playing, consume the buffer and update the state
             if play_pause ==  False:
                 # at start of each chunk, determine the speed
                 if play_length == 0:
                     play_speed = self.speed_controller.get_next_speed()
-                # calculate instant latency
-                instant_latency = global_time - play_time
-                average_latency = (average_latency * play_time + instant_latency * play_speed * dt) / (play_time + play_speed * dt)
                 # update the playback state
                 play_time += play_speed * dt    
                 play_length += play_speed * dt
@@ -221,5 +234,10 @@ class Simulator(object):
 
             if chunk_id >= self.mpd.video_length and play_id >= self.mpd.video_length:
                 simulation_end = True
-            
+
+        Plot.Plot(time_list, buffer_list, "buffer level").plot_info()
+        Plot.Plot(time_list, rebuffer_list, "rebuffer time").plot_info()
+        Plot.Plot(time_list, latency_list, "instant latency").plot_info()
+        plt.show()
+
         return self.calculate_qoe(rebuffer_time, previous_bitrates, start_up_time, average_latency)
