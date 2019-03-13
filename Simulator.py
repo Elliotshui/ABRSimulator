@@ -43,13 +43,12 @@ class NetworkInfo(object):
 
 
 class Simulator(object):
-    def __init__(self, AbrController, SpeedController):
+    def __init__(self):
         self.qoe_metric = None
         self.mpd = None
         self.network_info = None
-        self.abr_controller = AbrController
-        self.speed_controller = SpeedController
-        return
+        self.abr_controller = None
+        self.speed_controller = None
 
     def set_qoe_metric(self, qoe_metric):
         self.qoe_metric = qoe_metric
