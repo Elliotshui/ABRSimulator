@@ -82,11 +82,12 @@ class MPCBitrateController:
             prediction = []
             for i in range(horizon):
                 history_size = len(throughput_values)
+                if history_size is 0:
+                    return [100 for _ in range(horizon)]
 
                 sum_inverse = 0
                 for throughput in throughput_values:
                     sum_inverse += 1/throughput
-
                 tp_prediction = history_size / sum_inverse
                 prediction.append(tp_prediction)
                 throughput_values.append(tp_prediction)
@@ -101,39 +102,45 @@ class MPCBitrateController:
         ratio = bitrate / self.mpd.chunks[chunk].bitrates[-1]
         return np.log(ratio)
 
+    def get_chunk_sizes(self, chunk):
+            sizes = []
+            for bitrate in self.mpd.chunks[chunk].bitrates:
+                sizes.append(bitrate*self.mpd.chunk_length)
+            return sizes
+
     def calc_wait(self, chunk, buffer_level, bitrate_index, bandwidth):
         """Return required wait time to avoid overfilling buffer."""
-        chunk_size = self.mpd.chunks[chunk].sizes[bitrate_index]
+        chunk_size = self.get_chunk_sizes(chunk)[bitrate_index]
         new_buffer = max(0, buffer_level - chunk_size/bandwidth)
         wait_time = new_buffer + self.mpd.chunk_length - self.mpd.max_buffer
         return max(0, wait_time)
 
     def next_buffer(self, chunk, buffer_level, bitrate_index, bandwidth):
         """Return expected buffer level after chunk download."""
-        chunk_size = self.mpd.chunks[chunk].sizes[bitrate_index]
+        chunk_size = self.get_chunk_sizes(chunk)[bitrate_index]
         wait_time = self.calc_wait(chunk, buffer_level,
                                    bitrate_index, bandwidth)
         temp_buffer = max(0, buffer_level - chunk_size/bandwidth)
         new_buffer = max(0, temp_buffer + self.mpd.chunk_length - wait_time)
         return new_buffer
 
-    def objective(self, R_arg, chunk_info):
+    def objective(self, R_arg, chunk, previous_bitrate, predicted_bandwidths,
+                  buffer_level):
         """Return value of QoE function over given future chunks."""
         R_arg = [int(r) for r in R_arg]
         horizon = len(R_arg)
-        chunk = chunk_info.chunk_number
         sizes = [
-            self.mpd.chunks[i].sizes for i in range(chunk, chunk+horizon)]
+            self.get_chunk_sizes(i) for i in range(chunk, chunk+horizon)]
         bitrates = [
             self.mpd.chunks[i].bitrates for i in range(chunk, chunk+horizon)]
 
-        bandwidths = self.predicted_bandwidths
+        bandwidths = predicted_bandwidths
 
-        R = [chunk_info.previous_bitrate]
+        R = [previous_bitrate]
         R += R_arg
 
         buffer_vector = np.zeros(horizon)
-        buffer_vector[0] = chunk_info.buffer_level
+        buffer_vector[0] = buffer_level
 
         video_quality = 0
         quality_variance = 0
@@ -159,28 +166,37 @@ class MPCBitrateController:
                                  - self.qoe.rebuffer_weight*rebuffer_time
                                  - self.qoe.startup_weight*startup_delay)
         #print(str(R) + ": " + str(qoe_sum))
+        #print("Vidqual {},     rebuffer {}".format(video_quality, self.qoe.rebuffer_weight*rebuffer_time) )
         return -qoe_sum
 
-    def update_bandwidth_prediction(self):
-        """Get previous bandwidths from player and predict future bandwidths."""
-        chunk_info = self.player.get_next_chunk_info()
-        self.predicted_bandwidths = self.predict_throughput(
-            self.horizon, chunk_info.previous_bandwidths)
-        #print("PBW: " + str(self.predicted_bandwidths))
-
-    def optimize_qoe(self, chunk_info):
+    def optimize_qoe(self, chunk, previous_bitrate, predicted_bandwidths,
+                     buffer_level):
         """Return optimal bitrates from current chunk through horizon."""
         num_rates = len(self.mpd.chunks[0].bitrates)
         choices = (slice(0, num_rates, 1),) * self.horizon
         bitrate_indices = range(0, num_rates)
         #choices = itertools.product(bitrate_indices, repeat=self.horizon)
-        arg = chunk_info,
+        arg = (chunk, previous_bitrate, predicted_bandwidths, buffer_level)
         result = brute(self.objective, choices, args=arg, disp=True, finish=None)
+        if not hasattr(result, '__iter__'):
+            result = [result]
         return result
 
-    def next_bitrate(self):
+    def get_next_bitrate(
+            self, chunk, previous_bitrates,
+            previous_bandwidths, buffer_level):
         """Get data and return optimal bitrate for next chunk."""
-        self.update_bandwidth_prediction()
-        chunk_info = self.player.get_next_chunk_info()
-        result = self.optimize_qoe(chunk_info)
+        predicted_bandwidths = self.predict_throughput(self.horizon, previous_bandwidths)
+        if previous_bitrates:
+            previous_bitrate = previous_bitrates[-1]
+        else:
+            previous_bitrate = 0
+        result = self.optimize_qoe(chunk, previous_bitrate,
+                                   predicted_bandwidths, buffer_level)
+
+        #print(self.mpd.video_length - chunk)
+
+        if (self.mpd.video_length/self.mpd.chunk_length - chunk) <= self.horizon:
+            self.horizon -= 1
+        #print(result[0])
         return int(result[0])
