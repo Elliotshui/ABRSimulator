@@ -150,6 +150,9 @@ class Simulator(object):
         rebuffer_list = []
         latency_list = []
 
+        # additional speed controller inputs
+        partial_rebuffer = 0
+
         while simulation_end == False:
             # insert plot info
             time_list.append(global_time)
@@ -205,7 +208,20 @@ class Simulator(object):
             if play_pause ==  False:
                 # at start of each chunk, determine the speed
                 if play_length == 0:
-                    play_speed = self.speed_controller.get_next_speed(buffer_level, instant_latency)
+                    if len(rebuffer_list) > 1:
+                        partial_rebuffer = rebuffer_list[-1] - rebuffer_list[-2]
+                    else:
+                        partial_rebuffer = 0
+
+                    # NOTE: May be off by one.
+                    previous_played_bitrate = previous_bitrates[play_id-1]
+                    buffered_bitrates = previous_bitrates[play_id:]
+
+                    play_speed = self.speed_controller.get_next_speed(
+                        play_id, buffer_level, instant_latency,
+                        partial_rebuffer, previous_played_bitrate,
+                        buffered_bitrates, previous_bandwidths)
+                    print(play_speed)
                 # update the playback state
                 play_time += play_speed * dt
                 play_length += play_speed * dt

@@ -2,6 +2,7 @@ import Simulator
 import AbrController
 import SpeedController
 import HeuristicSpeedController
+import DQNSpeedController
 import mpc
 
 # constants
@@ -30,7 +31,7 @@ simulator.set_qoe_metric(qoe_metric)
 
 # controller initiation
 abr_controller = mpc.MPCBitrateController(simulator)
-speed_controller = HeuristicSpeedController.SpeedController(simulator)
+speed_controller = DQNSpeedController.SpeedController(simulator)
 
 # set controller
 simulator.abr_controller = abr_controller
