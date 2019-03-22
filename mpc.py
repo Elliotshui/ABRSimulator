@@ -1,7 +1,7 @@
 
 import numpy as np
 import itertools
-from statsmodels.tsa.holtwinters import SimpleExpSmoothing
+#from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 from scipy.optimize import brute
 
 """ ALGORITHM PSEUDO CODE
