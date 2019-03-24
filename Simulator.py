@@ -183,7 +183,9 @@ class Simulator(object):
             if download_pause == False:
                 # if downloading a new chunk, call the abr controller to determine the bitrate
                 if download_time == 0:
-                    current_bitrate = self.abr_controller.get_next_bitrate(chunk_id, previous_bitrates, previous_bandwidths, buffer_level)
+                    current_bitrate = self.abr_controller.get_next_bitrate(
+                        chunk_id, previous_bitrates, previous_bandwidths,
+                        buffer_level, instant_latency, partial_rebuffer)
                     target_size = self.mpd.chunks[chunk_id].bitrates[current_bitrate] * self.mpd.chunk_length
                 # calculate the instant bandwidth
                 bandwidth_idx = int(global_time / self.network_info.interval)
