@@ -109,7 +109,8 @@ class Simulator(object):
         available_id = -1           # the lastest available chunk_id
         previous_bitrates = []      # bitrate index for previous chunks
         current_bitrate = None      # bitrate index for the chunk to be downloaded
-        previous_bandwidths = []    # list of previous average bandwidths      
+        previous_bandwidths = []    # list of previous average bandwidths
+        previous_download_times = []      
         downloaded_size = 0.0       
         target_size = None
         download_pause = True
@@ -139,6 +140,7 @@ class Simulator(object):
         # timer
         global_time = 0.0
         rebuffer_time = 0.0
+        last_rebuffer_time = 0.0
         start_up_time = 0.0
 
         # update the state for every dt second, loop until the end
@@ -180,7 +182,9 @@ class Simulator(object):
             if download_pause == False:                
                 # if downloading a new chunk, call the abr controller to determine the bitrate
                 if download_time == 0:
-                    current_bitrate = self.abr_controller.get_next_bitrate(chunk_id, previous_bitrates, previous_bandwidths, buffer_level)
+                    rebuf_for_chunk = rebuffer_time - last_rebuffer_time
+                    current_bitrate = self.abr_controller.get_next_bitrate(chunk_id, previous_bitrates, previous_bandwidths, previous_download_times, buffer_level, rebuf_for_chunk)
+                    last_rebuffer_time = rebuffer_time
                     target_size = self.mpd.chunks[chunk_id].bitrates[current_bitrate] * self.mpd.chunk_length             
                 # calculate the instant bandwidth
                 bandwidth_idx = int(global_time / self.network_info.interval)
@@ -191,6 +195,7 @@ class Simulator(object):
                 if downloaded_size >= target_size:
                     previous_bandwidths.append(downloaded_size / download_time)
                     previous_bitrates.append(current_bitrate)
+                    previous_download_times.append(download_time)
                     chunk_id += 1
                     downloaded_size = 0
                     download_time = 0

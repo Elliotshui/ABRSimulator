@@ -37,7 +37,6 @@ simulator.speed_controller = speed_controller
 ## DO NOT MODIFY THIS PART
 
 qoe = simulator.run()
-print(qoe)
 
 
 
