@@ -3,18 +3,19 @@ import tensorflow as tf
 import random
 import tflearn
 import math
+import time
 
 STATE_DIM = 4  # Number of state 'dimensions'. This is not a tunable param and
                # must be set to the actual number of 'state dimensions'
 
 # Overridable DQN hyperparameters
 STATE_LEN = 4  # Number of previous bandwidths to take into account
-MAX_EPS = 1  # Initial epsilon for e-greedy policy
-MIN_EPS = 0.01  # Minimum epsilon for e-greedy policy
-LAMBDA = 0.0001  # Epsilon decay rate
+MAX_EPS = 0.99  # Initial epsilon for e-greedy policy
+MIN_EPS = 0.001  # Minimum epsilon for e-greedy policy
+LAMBDA = 0.5  # Epsilon decay rate
 GAMMA = 0.99  # Future reward discounting factor
-BATCH_SIZE = 20  # Number of states to include in experience replay
-MAX_MEMORY = 5000  # Maximum number of experienced states to store in memory
+BATCH_SIZE = 32  # Number of states to include in experience replay
+MAX_MEMORY = 1000000  # Maximum number of experienced states to store in memory
 
 class BitrateController:
     """Video playback speed controller live-streaming implementing DQN.
@@ -28,7 +29,7 @@ class BitrateController:
         num_speeds: int - number of discrete speeds
         speeds: array containing allowed speeds
         max_eps: initial epsilon for e-greedy policy
-        min_eps: minimum episolon for e-greedy policy
+        min_eps: minimum episilon for e-greedy policy
         lmb: epsilon decay rate
         eps: current value of epsilon
         state_len: number of timesteps DQN should consider
@@ -40,15 +41,20 @@ class BitrateController:
     def __init__(self, simulator,
                  max_eps=MAX_EPS, min_eps=MIN_EPS,
                  lmb=LAMBDA, max_memory=MAX_MEMORY, batch_size=BATCH_SIZE,
-                 state_len=STATE_LEN, state_dim=STATE_DIM):
+                 state_len=STATE_LEN, state_dim=STATE_DIM, num_runs=None):
         self.simulator = simulator
         self.mpd = self.simulator.get_mpd()
         self.qoe_metric = self.simulator.get_qoe_metric()
         self.num_bitrates = len(self.mpd.chunks[0].bitrates)
 
+        self.num_runs = num_runs
         self.max_eps = max_eps
         self.min_eps = min_eps
-        self.lmb = lmb
+        if lmb is None:
+            self.lmb = -np.log((min_eps + 0.0005 - self.min_eps)/(self.max_eps - self.min_eps))/(self.num_runs*len(self.mpd.chunks))
+        else:
+            self.lmb = lmb
+
         self.eps = self.max_eps
 
         self.state_len = state_len
@@ -60,10 +66,14 @@ class BitrateController:
         self.memory_staging = {}  # Used to match actions with outcomes
         self.steps = 0
 
+        self.time_tracker = []
+
     # add functions you need here
     def get_next_bitrate(self, chunk_id, previous_bitrates, previous_bandwidths,
                          buffer_level, latency, rebuffer):
         """Return next speed according to e-greedy policy and train network."""
+        self.time_tracker = []
+        self.time_tracker.append(time.time())
         # Operates at playback time. Playback bitrates is list of previously selected
         # bitrates, including the bitrate of chunk_id.
         #state = np.array((buffer_level, latency)) Primitive state
@@ -76,17 +86,19 @@ class BitrateController:
         if chunk_id > 1:
             # Calculate reward for previous action and add this to the
             # previously saved list in the memory_staging dict.
-            bitrate1 = previous_bitrates[-1]
-            bitrate2 = previous_bitrates[-2]
+            bitrate_index1 = previous_bitrates[-1]
+            bitrate_index2 = previous_bitrates[-2]
+            bitrate1 = self.mpd.chunks[chunk_id-1].bitrates[bitrate_index1]
+            bitrate2 = self.mpd.chunks[chunk_id-2].bitrates[bitrate_index2]
             previous_reward = self.calc_reward(bitrate1, bitrate2, rebuffer, latency)
             self.memory_staging[chunk_id - 1].extend((previous_reward, state))
             self.memory.add_sample(tuple(self.memory_staging[chunk_id-1]))
             del self.memory_staging[chunk_id - 1]
             # Train DQN using saved experiences.
             self.replay()
-
+        #self.time_tracker.append(time.time())
+        #print("Before choose_bitrate: {}".format(self.time_tracker[-1] - self.time_tracker[-2]))
         bitrate_index = self.choose_bitrate(state)
-
         # Save current state and action as extendable list
         self.memory_staging[chunk_id] = [state, bitrate_index]
 
@@ -95,6 +107,9 @@ class BitrateController:
         self.eps = (self.min_eps + (self.max_eps - self.min_eps)
                                  * math.exp(-self.lmb * self.steps))
 
+        self.time_tracker.append(time.time())
+        elapsed_time = self.time_tracker[-1] - self.time_tracker[-2]
+        #print("Get_next_bitrate runtime: {}, time per minute: {}".format(elapsed_time, elapsed_time*60))
         return bitrate_index
 
     def create_state_array(self, buffer_level, latency, previous_bitrate, previous_bandwidths):
@@ -136,6 +151,7 @@ class BitrateController:
 
     def replay(self):
         """Train network using experienced states stored in memory."""
+        replay_start = time.time()
         batch = self.memory.sample(self.model.batch_size)
         states = np.array([val[0] for val in batch])
         # TODO Change state retrieval
@@ -165,6 +181,7 @@ class BitrateController:
         y = np.array(y)
 
         self.model.train_batch(self.sess, x, y)
+        #print("Replay time: {}".format(time.time()-replay_start))
 
 class DQN:
     """Represents the Deep Q Network."""

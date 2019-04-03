@@ -1,5 +1,5 @@
-import Plot
-import matplotlib.pyplot as plt
+#import Plot
+#import matplotlib.pyplot as plt
 # bitrates is the list of bitrate available for a chunk
 # normally four or five options, bitrates[0] stands for the lowest
 class Chunk(object):
@@ -51,6 +51,12 @@ class Simulator(object):
         self.network_info = None
         self.abr_controller = None
         self.speed_controller = None
+        self.display_plots = True
+
+        self.chunk_history = None
+        self.bitrate_history = None
+        self.bandwidth_history = None
+        self.speed_history = None
 
     def set_qoe_metric(self, qoe_metric):
         self.qoe_metric = qoe_metric
@@ -81,11 +87,11 @@ class Simulator(object):
 
     def calculate_qoe(self, rebuffer_time, previous_bitrates, start_up_time, average_latency):
         variance = 0
-        for i in range(0, self.mpd.video_length - 1):
+        for i in range(0, self.mpd.video_length - 2):
             variance += abs(self.mpd.chunks[i].bitrates[previous_bitrates[i]] - self.mpd.chunks[i + 1].bitrates[previous_bitrates[i + 1]])
 
         total_bitrate = 0
-        for i in range(0, self.mpd.video_length):
+        for i in range(0, self.mpd.video_length-1):
             total_bitrate += self.mpd.chunks[i].bitrates[previous_bitrates[i]]
 
         return self.qoe_metric.bitrate_weight * total_bitrate, \
@@ -114,6 +120,12 @@ class Simulator(object):
         target_size = None
         download_pause = True
         download_time = 0
+
+        # Bookkeeping
+        chunk_history = []
+        bitrate_history = []
+        bandwidth_history = []
+        speed_history = []
 
         # buffer state
         buffer_level = 0
@@ -152,6 +164,11 @@ class Simulator(object):
 
         # additional speed controller inputs
         partial_rebuffer = 0
+        rebuffer_at_chunk_list = []
+        avg_latency_at_chunk_list = []
+        rebuffer_at_play_list = []
+        avg_latency_at_play_list = []
+
 
         while simulation_end == False:
             # insert plot info
@@ -167,12 +184,11 @@ class Simulator(object):
                 rebuffer_time += dt
 
             # if the download pauses
-            available_id = min(int(global_time / self.mpd.chunk_length) - 1, self.mpd.video_length - 1)
+            available_id = min(int(global_time / self.mpd.chunk_length) - 1, self.mpd.video_length-1)
             if available_id < chunk_id or buffer_full == True:
                 download_pause = True
             else:
                 download_pause = False
-
             # if the playback pauses
             if buffer_empty == True or start_up == True:
                 play_pause = True
@@ -180,12 +196,26 @@ class Simulator(object):
                 play_pause = False
 
             # if downloading, download the video and update the state
+
             if download_pause == False:
                 # if downloading a new chunk, call the abr controller to determine the bitrate
                 if download_time == 0:
+                    # Calculate rebuffering since previous download
+                    rebuffer_at_chunk_list.append(rebuffer_time)
+                    avg_latency_at_chunk_list.append(average_latency)
+                    if len(rebuffer_at_chunk_list) > 1:
+                        partial_rebuffer = rebuffer_at_chunk_list[-1] - rebuffer_at_chunk_list[-2]
+                    else:
+                        partial_rebuffer = 0
+
+                    if len(avg_latency_at_chunk_list) > 1:
+                        partial_avg_latency = avg_latency_at_chunk_list[-1] - avg_latency_at_chunk_list[-2]
+                    else:
+                        partial_avg_latency = 0
+
                     current_bitrate = self.abr_controller.get_next_bitrate(
                         chunk_id, previous_bitrates, previous_bandwidths,
-                        buffer_level, instant_latency, partial_rebuffer)
+                        buffer_level, partial_avg_latency, partial_rebuffer)
                     target_size = self.mpd.chunks[chunk_id].bitrates[current_bitrate] * self.mpd.chunk_length
                 # calculate the instant bandwidth
                 bandwidth_idx = int(global_time / self.network_info.interval)
@@ -194,6 +224,12 @@ class Simulator(object):
                 download_time += dt
                 #if finished downloading the current chunk, update the chunk to be downloaded
                 if downloaded_size >= target_size:
+                    chunk_history.append(chunk_id)
+                    bitrate_history.append(self.mpd.chunks[chunk_id].bitrates[current_bitrate])
+                    bandwidth_history.append(downloaded_size / download_time)
+
+
+
                     previous_bandwidths.append(downloaded_size / download_time)
                     previous_bitrates.append(current_bitrate)
                     chunk_id += 1
@@ -210,20 +246,26 @@ class Simulator(object):
             if play_pause ==  False:
                 # at start of each chunk, determine the speed
                 if play_length == 0:
-                    if len(rebuffer_list) > 1:
-                        partial_rebuffer = rebuffer_list[-1] - rebuffer_list[-2]
+                    rebuffer_at_play_list.append(rebuffer_time)
+                    avg_latency_at_play_list.append(average_latency)
+                    if len(rebuffer_at_play_list) > 1:
+                        partial_rebuffer = rebuffer_at_play_list[-1] - rebuffer_at_play_list[-2]
                     else:
                         partial_rebuffer = 0
+
+                    if len(avg_latency_at_play_list) > 1:
+                        partial_avg_latency = avg_latency_at_play_list[-1] - avg_latency_at_play_list[-2]
+                    else:
+                        partial_avg_latency = 0
 
                     # NOTE: May be off by one.
                     previous_played_bitrate = previous_bitrates[play_id-1]
                     buffered_bitrates = previous_bitrates[play_id:]
-
+                    speed_history.append(play_speed)
                     play_speed = self.speed_controller.get_next_speed(
-                        play_id, buffer_level, instant_latency,
+                        play_id, buffer_level, partial_avg_latency,
                         partial_rebuffer, previous_played_bitrate,
                         buffered_bitrates, previous_bandwidths)
-                    print(play_speed)
                 # update the playback state
                 play_time += play_speed * dt
                 play_length += play_speed * dt
@@ -250,12 +292,26 @@ class Simulator(object):
             # update global timer
             global_time += dt
 
-            if chunk_id >= self.mpd.video_length and play_id >= self.mpd.video_length:
+            if chunk_id >= self.mpd.video_length-1 and play_id >= self.mpd.video_length-1:
                 simulation_end = True
 
-        Plot.Plot(time_list, buffer_list, "buffer level").plot_info()
-        Plot.Plot(time_list, rebuffer_list, "rebuffer time").plot_info()
-        Plot.Plot(time_list, latency_list, "instant latency").plot_info()
-        plt.show()
+        if self.display_plots:
+            #plt.subplot(1, 3, 1)
+            #plt.plot(time_list, buffer_list)
+            #plt.subplot(1, 3, 2)
+            #plt.plot(time_list, rebuffer_list)
+            #plt.subplot(1, 3, 3)
+            #plt.plot(time_list, latency_list)
+            #Plot.Plot(time_list, buffer_list, "buffer level").plot_info()
+            #Plot.Plot(time_list, rebuffer_list, "rebuffer time").plot_info()
+            #Plot.Plot(time_list, latency_list, "instant latency").plot_info()
+            #plt.show()
+            pass
+
+
+        self.chunk_history = chunk_history
+        self.bitrate_history = bitrate_history
+        self.bandwidth_history = bandwidth_history
+        self.speed_history = speed_history
 
         return self.calculate_qoe(rebuffer_time, previous_bitrates, start_up_time, average_latency)

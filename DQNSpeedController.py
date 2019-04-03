@@ -3,18 +3,19 @@ import tensorflow as tf
 import random
 import tflearn
 import math
+import time
 
 STATE_DIM = 5  # Number of state 'dimensions'. This is not a tunable param and
                # must be set to the actual number of 'state dimensions'
 
 # Overridable DQN hyperparameters
 STATE_LEN = 4  # Number of previous bandwidths to take into account
-MAX_EPS = 1  # Initial epsilon for e-greedy policy
-MIN_EPS = 0.01  # Minimum epsilon for e-greedy policy
-LAMBDA = 0.0001  # Epsilon decay rate
+MAX_EPS = 0.99  # Initial epsilon for e-greedy policy
+MIN_EPS = 0.001  # Minimum epsilon for e-greedy policy
+LAMBDA = 0.0005  # Epsilon decay rate
 GAMMA = 0.99  # Future reward discounting factor
-BATCH_SIZE = 20  # Number of states to include in experience replay
-MAX_MEMORY = 5000  # Maximum number of experienced states to store in memory
+BATCH_SIZE = 32  # Number of states to include in experience replay
+MAX_MEMORY = 1000000  # Maximum number of experienced states to store in memory
 
 # Overridable speed controller parameters
 MAX_SPEED = 1.1  # Maximum allowed playback speed
@@ -48,18 +49,24 @@ class SpeedController:
     def __init__(self, simulator, max_speed=MAX_SPEED, min_speed=MIN_SPEED,
                  num_speeds=NUM_SPEEDS, max_eps=MAX_EPS, min_eps=MIN_EPS,
                  lmb=LAMBDA, max_memory=MAX_MEMORY, batch_size=BATCH_SIZE,
-                 state_len=STATE_LEN, state_dim=STATE_DIM):
+                 state_len=STATE_LEN, state_dim=STATE_DIM, num_runs=None):
         self.simulator = simulator
         self.mpd = self.simulator.get_mpd()
         self.qoe_metric = self.simulator.get_qoe_metric()
 
+        self.num_runs = num_runs
         self.max_speed = max_speed
         self.min_speed = min_speed
         self.num_speeds = num_speeds
         self.speeds = np.linspace(self.min_speed, self.max_speed, self.num_speeds)
         self.max_eps = max_eps
         self.min_eps = min_eps
-        self.lmb = lmb
+
+        if lmb is None:
+            self.lmb = -np.log((min_eps + 0.0005 - self.min_eps)/(self.max_eps - self.min_eps))/(self.num_runs*len(self.mpd.chunks))
+        else:
+            self.lmb = lmb
+
         self.eps = self.max_eps
 
         self.state_len = state_len
@@ -76,16 +83,21 @@ class SpeedController:
                        rebuffer, previous_bitrate, buffered_bitrates,
                        previous_bandwidths):
         """Return next speed according to e-greedy policy and train network."""
+        time_start = time.time()
         # Operates at playback time. Playback bitrates is list of previously selected
         # bitrates, including the bitrate of chunk_id.
         #state = np.array((buffer_level, latency)) Primitive state
+
         state = self.create_state_array(
             buffer_level, latency, previous_bitrate, buffered_bitrates, previous_bandwidths)
         if chunk_id > 1:
             # Calculate reward for previous action and add this to the
             # previously saved list in the memory_staging dict.
             bitrate1 = previous_bitrate
-            bitrate2 = buffered_bitrates[0]
+            if len(buffered_bitrates) == 0:
+                bitrate2 = bitrate1
+            else:
+                bitrate2 = buffered_bitrates[0]
             previous_reward = self.calc_reward(bitrate1, bitrate2, rebuffer, latency)
             self.memory_staging[chunk_id - 1].extend((previous_reward, state))
             self.memory.add_sample(tuple(self.memory_staging[chunk_id-1]))
@@ -104,6 +116,8 @@ class SpeedController:
         self.eps = (self.min_eps + (self.max_eps - self.min_eps)
                                  * math.exp(-self.lmb * self.steps))
 
+        elapsed_time = time_start - time.time()
+        #print("Get_next_speed runtime: {}, time per minute: {}".format(elapsed_time, elapsed_time*60))
         return self.speeds[speed_index]
 
     def create_state_array(self, buffer_level, latency, previous_bitrate,
@@ -125,13 +139,12 @@ class SpeedController:
         if len(buffered_bitrates) < self.state_len:
             state[3, :len(buffered_bitrates)] = buffered_bitrates[:]
         else:
-            state[3, :] = buffered_bitrates[:len(buffered_bitrates)-self.state_len]
+            state[3, :] = buffered_bitrates[:self.state_len]
 
         if len(previous_bandwidths) < self.state_len:
             state[4, :len(previous_bandwidths)] = previous_bandwidths
         else:
             state[4, :] = previous_bandwidths[len(previous_bandwidths)-self.state_len:]
-
         return state
 
 
