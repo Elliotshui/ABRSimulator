@@ -45,12 +45,15 @@ class NetworkInfo(object):
 
 
 class Simulator(object):
-    def __init__(self):
+    def __init__(self, trainer=None):
+        self.trainer = trainer
+
         self.qoe_metric = None
         self.mpd = None
         self.network_info = None
         self.abr_controller = None
         self.speed_controller = None
+        self.trace_fetcher = None
         self.display_plots = True
 
         self.chunk_history = None
@@ -70,6 +73,9 @@ class Simulator(object):
             bandwidths.append(float(line))
         self.network_info = NetworkInfo(interval, bandwidths)
         return
+
+    def set_network_info_with_list(self, interval, bandwidths):
+        self.network_info = NetworkInfo(interval, bandwidths)
 
     # read mpd from mpd file
     def set_mpd(self, chunk_length, max_buffer, start_up_length, mpdfile):
@@ -219,6 +225,11 @@ class Simulator(object):
                     target_size = self.mpd.chunks[chunk_id].bitrates[current_bitrate] * self.mpd.chunk_length
                 # calculate the instant bandwidth
                 bandwidth_idx = int(global_time / self.network_info.interval)
+
+                #fetch new trace if trace is running out
+                if bandwidth_idx >= len(self.network_info.bandwidths):
+                    self.network_info.bandwidths += self.trace_fetcher.get_random_trace(self.mpd.video_length)
+
                 bandwidth = self.network_info.bandwidths[bandwidth_idx]
                 downloaded_size = downloaded_size + bandwidth * dt
                 download_time += dt
@@ -227,9 +238,6 @@ class Simulator(object):
                     chunk_history.append(chunk_id)
                     bitrate_history.append(self.mpd.chunks[chunk_id].bitrates[current_bitrate])
                     bandwidth_history.append(downloaded_size / download_time)
-
-
-
                     previous_bandwidths.append(downloaded_size / download_time)
                     previous_bitrates.append(current_bitrate)
                     chunk_id += 1
