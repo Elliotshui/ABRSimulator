@@ -124,14 +124,14 @@ class TraceFetcher:
         f = open(trace_path)
         bandwidths = []
         for line in f.readlines():
-            bandwidths.append(float(line))
+            bandwidths.append(float(line)*6)
         return bandwidths
 
     def get_random_real_trace(self, trace_length, trace_folder_path):
         new_trace = []
         while len(new_trace) < trace_length:
             trace_name = random.choice(self.list_of_trace_names)
-            trace_path = self.trace_folder_path + "\\" + trace_name
+            trace_path = trace_folder_path + "\\" + trace_name
             new_trace += self.import_trace(trace_path)
         if len(new_trace) > trace_length:
             new_trace = new_trace[:trace_length]
