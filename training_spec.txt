@@ -1,0 +1,139 @@
+-Notation-
+U(a, b) = uniform integer distribution between a and b (per video)
+
+
+-Training Round 1: Training on real traces-
+Number of videos: 6000 (save model each 1000 videos)
+Video lengths: 60 (seconds)
+Chunk lengths: 1 (seconds)
+Max buffer: 20 (seconds)
+Startup time: 2 (seconds)
+Maximum speed: 1.1
+Minimum speed: 0.9
+Number of speeds: 3
+MPD: Generated from mpd_generator.py with settings:
+  Minimum bitrate> 240
+  Maximum bitrate: 2000
+  num_bitrates = 5
+Network trace: Random from tracebank
+Network trace interval: 0.5 (seconds)
+QoE Parameters:
+  Bitrate: 1
+  Rebuffer: 1000
+  Variance: 1
+  Startup: 1000
+  Latency: 1000
+
+
+-Training Round 2: Training on synthetic traces-
+Number of videos: 6000 (save model each 1000 videos)
+Video lengths: 60 (seconds)
+Chunk lengths: 1 (seconds)
+Max buffer: 20 (seconds)
+Maximum speed: 1.1
+Minimum speed: 0.9
+Number of speeds: 3
+Startup time: 2 (seconds)
+MPD: Generated from mpd_generator.py with settings:
+  Minimum bitrate> 240
+  Maximum bitrate: 2000
+  num_bitrates = 5
+Network trace: Generated from trace_generator.py with settings:
+  g_dt = 0.5  # Timestep in seconds
+  g_length = video_length*100  # Length of trace in seconds
+  g_maximum_bw = 4000  # Maximum allowed bandwidth
+  g_minimum_bw = 200  # Minimum allowed bandwidth
+  g_fine_variability = 0.1  # Control fine variation amplitude
+  g_course_variability = 0.6  # Control course variation amplitude
+  g_course_freq = 15  # Control course variation frequency
+  g_smoothing_factor = 0.1 # Control strength of smoothing
+  g_post_noise = 10  # Standard deviation of post-noise
+Network trace interval: 0.5 (seconds)
+QoE Parameters:
+  Bitrate: 1
+  Rebuffer: 1000
+  Variance: 1
+  Startup: 1000
+  Latency: 1000
+
+
+--Gate 1--
+Assess performance of training on trace generator versus training on trace data.
+Test models (for each 1000 training steps) on real training data and compute
+average QOE. Continue with best data source.
+Also estimate convergence of neural networks.
+
+
+-Training Round 3: Balanced QoE-
+Number of videos: 25000 (save model each 1000 videos)
+Video lengths: 90 + U(-50, 50) (seconds)
+Chunk lengths: 1 (seconds)
+Max buffer: 20 + U(-10, 10) (seconds)
+Startup time: 2 (seconds)
+Maximum speed: 1.1
+Minimum speed: 0.9
+Number of speeds: 3 + U(0, 1)*2
+MPD: Generated from mpd_generator.py with settings:
+  Minimum bitrate> 240
+  Maximum bitrate: 2000
+  num_bitrates = 4 + U(0, 4)
+Network trace: From best method
+Network trace interval: 0.5 (seconds)
+QoE Parameters:
+  Bitrate: 1
+  Rebuffer: 1000
+  Variance: 1
+  Startup: 1000
+  Latency: 1000
+
+
+--Gate 2--
+Assess performance. Should be near optimal at this point. Compare with other
+algorithms carefully, as well as pensieve data. Fix any problems. Repeat round 3
+if necessary.
+
+
+-Training Round 4: Latency apathetic QoE-
+Number of videos: 25000 (save model each 1000 videos)
+Video lengths: 90 + U(-50, 50) (seconds)
+Chunk lengths: 1 (seconds)
+Max buffer: 20 + U(-10, 10) (seconds)
+Startup time: 2 (seconds)
+Maximum speed: 1.1
+Minimum speed: 0.9
+Number of speeds: 3 + U(0, 1)*2
+MPD: Generated from mpd_generator.py with settings:
+  Minimum bitrate> 240
+  Maximum bitrate: 2000
+  num_bitrates = 4 + U(0, 4)
+Network trace: From best method
+Network trace interval: 0.5 (seconds)
+QoE Parameters:
+  Bitrate: 1
+  Rebuffer: 1000
+  Variance: 1
+  Startup: 1000
+  Latency: 0
+
+
+-Training Round 5: Latency concerned QoE-
+Number of videos: 25000 (save model each 1000 videos)
+Video lengths: 90 + U(-50, 50) (seconds)
+Chunk lengths: 1 (seconds)
+Max buffer: 20 + U(-10, 10) (seconds)
+Startup time: 2 (seconds)
+Maximum speed: 1.1
+Minimum speed: 0.9
+Number of speeds: 3 + U(0, 1)*2
+MPD: Generated from mpd_generator.py with settings:
+  Minimum bitrate> 240
+  Maximum bitrate: 2000
+  num_bitrates = 4 + U(0, 4)
+Network trace: From best method
+Network trace interval: 0.5 (seconds)
+QoE Parameters:
+  Bitrate: 1
+  Rebuffer: 1000
+  Variance: 0.5
+  Startup: 500
+  Latency: 1500

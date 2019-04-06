@@ -10,10 +10,10 @@ for i in range(0, video_length):
     f_video.write('\n')
 
 # generate network trace
-network_length = 5000
+network_length = 100000
 f_net = open("example_networktrace", "r+")
 
-average_bandwidth = 200
+average_bandwidth = 500
 sigma = 100
 for i in range(0, network_length):
     rand_bandwidth = np.random.randn() * sigma + average_bandwidth
