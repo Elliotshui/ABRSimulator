@@ -127,8 +127,27 @@ class Benchmarker:
 
     def dummy_simulator(self):
         dummy = Simulator.Simulator()
-        dummy.qoe_metric = None
-        dummy.mpd = None
+        bitrates = (1, 1, 1, 1, 1)
+        chunks = [Chunk(bitrates)]
+        network_trace = []
+        dummy_params = self.new_test_params('')
+        qoe_metric = dummy_params.set_qoe_metric(
+            bitrate_weight = 1,
+            rebuffer_weight = 1000,
+            variance_weight = 1,
+            startup_weight = 1000,
+            latency_weight = 0)
+        mpd = dummy_params.set_mpd(
+            chunk_length = 1,
+            max_buffer = 15,
+            start_up_length = 2,
+            chunks = chunks)
+        network_info = dummy_params.set_network_info(
+            trace_interval = 0.5,
+            network_trace = network_trace)
+        dummy.qoe_metric = qoe_metric
+        dummy.mpd = mpd
+        dummy.network_trace = network_trace
         return dummy
 
 
@@ -313,6 +332,51 @@ def test_batch_benchmarking():
     test_superlist = bm.run_batch_tests(controllers_list, params_list)
     bm.print_batch_tests(test_superlist)
 
+def test_dqn_benchmarking():
+    # This code illustrates how to test multiple controllers on a single
+    # network trace and mpd pair.
+    # Init benchmarker and choose network trace and chunk files
+    bm = Benchmarker()
+    network_trace = bm.load_trace_from_file(r'benchmark_traces\trace1_13008_cnn.txt')
+    chunks = bm.load_chunks_from_file(r'benchmark_chunks\chunks1.txt')
+    # Set up testing parameters
+    params = bm.new_test_params('Hello world')
+    params.set_qoe_metric(
+        bitrate_weight = 1,
+        rebuffer_weight = 1000,
+        variance_weight = 1,
+        startup_weight = 1000,
+        latency_weight = 0)
+    params.set_mpd(
+        chunk_length = 1,
+        max_buffer = 15,
+        start_up_length = 2,
+        chunks = chunks)
+    params.set_network_info(
+        trace_interval = 0.5,
+        network_trace = network_trace)
+    # Choose controllers. Controller should already be initialized, although
+    # in this case I use new ones initalized with a dummy simulator.
+    # Controllers must have method .assign_simulator(simulator) that takes a
+    # simulator object and updates the controllers mpd and qoe_metric.
+    # Controllers must also have a .name attribute containing a string
+    dqn_bitrate_controller = DQNBitrateController.BitrateController(bm.dummy_simulator())
+    dqn_bitrate_controller.load_model('saved_models\\training_run_2\\51853abr_5.ckpt')
+    controllers1 = (dqn_bitrate_controller,
+                    HeuristicSpeedController.SpeedController(bm.dummy_simulator()))
 
-test_single_benchmarking()
-test_batch_benchmarking()
+    controllers2 = (bola_abr.BitrateController(bm.dummy_simulator()),
+                    HeuristicSpeedController.SpeedController(bm.dummy_simulator()))
+    # Form a list of all controllers to be tested
+    controllers_list = [controllers1, controllers2]
+    # Run tests. test_list is a list of test objects containing the results
+    test_list = bm.run_single_tests(controllers_list, params)
+    # Visualize through printing
+    bm.print_single_tests(test_list)
+    # Visualize through plotting
+    bm.plot_single_tests(test_list)
+
+
+#test_single_benchmarking()
+#test_batch_benchmarking()
+test_dqn_benchmarking()
