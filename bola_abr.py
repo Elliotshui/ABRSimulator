@@ -27,11 +27,17 @@ class BitrateController:
     """
     def __init__(self, player=None, bitrate_utility=None):
         """Initialize ABR controller with player state."""
+        self.name = "BOLA Bitrate"
         if player:
             self.player = player
             self.mpd = player.get_mpd()
             self.qoe = player.get_qoe_metric()
         self.bitrate_utility = self.default_bitrate_utility
+
+    def assign_simulator(self, simulator):
+        self.player = simulator
+        self.mpd = self.player.get_mpd()
+        self.qoe = self.player.get_qoe_metric()
 
     def set_player(self, player):
         """Set the associated video player object used for fetching data."""

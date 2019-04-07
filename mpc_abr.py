@@ -49,14 +49,20 @@ class BitrateController:
     next_bitrate : which bitrate to download
     (pausing instructions?)
     """
-    def __init__(self, player=None, bitrate_utility=None, horizon=None):
+    def __init__(self, player, bitrate_utility=None, horizon=None):
         """Initialize ABR controller with player state."""
+        self.name = "MPC Bitrate"
         if player:
             self.player = player
             self.mpd = player.get_mpd()
             self.qoe = player.get_qoe_metric()
         self.bitrate_utility = self.default_bitrate_utility
         self.horizon = 3 if horizon is None else horizon
+
+    def assign_simulator(self, simulator):
+        self.player = simulator
+        self.mpd = self.player.get_mpd()
+        self.qoe = self.player.get_qoe_metric()
 
     def update_mpd():
         """Discard old MPD and get new from VideoPlayer"""

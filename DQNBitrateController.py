@@ -20,10 +20,12 @@ BATCH_SIZE = 32  # Number of states to include in experience replay
 MAX_MEMORY = 1000000  # Maximum number of experienced states to store in memory
 
 class BitrateController(DQNController.Controller):
-    def __init__(self, simulator,
+    def __init__(self, simulator=None,
                  max_eps=MAX_EPS, min_eps=MIN_EPS, gamma=GAMMA,
                  lmb=LAMBDA, max_memory=MAX_MEMORY, batch_size=BATCH_SIZE,
                  state_len=STATE_LEN, state_dim=STATE_DIM, num_runs=None):
+        self.name = "DQN Bitrate"
+        self.training_mode = True
         self.simulator = simulator
         self.mpd = self.simulator.get_mpd()
         self.qoe_metric = self.simulator.get_qoe_metric()
@@ -53,6 +55,12 @@ class BitrateController(DQNController.Controller):
 
         self.time_tracker = []
 
+    def assign_simulator(self, simulator):
+        self.simulator = simulator
+        self.mpd = self.simulator.get_mpd()
+        self.qoe_metric = self.simulator.get_qoe_metric()
+        self.num_bitrates = len(self.mpd.chunks[0].bitrates)
+
 
     # add functions you need here
     def get_next_bitrate(self, chunk_id, previous_bitrates, previous_bandwidths,
@@ -72,6 +80,9 @@ class BitrateController(DQNController.Controller):
         state = self.create_state_array(
             buffer_level, latency, previous_bitrate,
             previous_bandwidths, allowed_bitrates)
+
+        if not self.training_mode:
+            return np.argmax(self.model.predict_one(state))
 
         if chunk_id > 1:
             # Calculate reward for previous action and add this to the
@@ -140,6 +151,11 @@ class BitrateController(DQNController.Controller):
         # Save the variables to disk.
         save_path = self.saver.save(self.sess, "tmp/"+id+".ckpt")
         print("Model saved in path: %s" % save_path)
+
+    def load_model(self, path):
+        # Restore variables from disk.
+        self.saver.restore(self.sess, path)
+        print("Model restored.")
 
 class DQN(DQNController.DQN):
     """Represents the Deep Q Network."""
