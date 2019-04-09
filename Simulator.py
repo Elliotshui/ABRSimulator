@@ -231,9 +231,7 @@ class Simulator(object):
                     #fetch new trace if trace is running out
                     if bandwidth_idx >= len(self.network_info.bandwidths):
                         new_trace = self.trace_fetcher.get_random_trace(self.mpd.video_length)
-                        print(new_trace)
-                        print(self.network_info.bandwidths)
-                        self.network_info.bandwidths += new_trace
+                        self.network_info.bandwidths = [*self.network_info.bandwidths, *new_trace]
 
                 bandwidth = self.network_info.bandwidths[bandwidth_idx]
                 downloaded_size = downloaded_size + bandwidth * dt
@@ -279,6 +277,7 @@ class Simulator(object):
                         play_id, buffer_level, partial_avg_latency,
                         partial_rebuffer, previous_played_bitrate,
                         buffered_bitrates, previous_bandwidths)
+                    #print(play_speed)
                 # update the playback state
                 play_time += play_speed * dt
                 play_length += play_speed * dt
@@ -320,13 +319,15 @@ class Simulator(object):
             #Plot.Plot(time_list, latency_list, "instant latency").plot_info()
             #plt.show()
             pass
-
+        """
         for i in range(1, self.mpd.video_length):
+            print(self.mpd.video_length, len(rebuffer_list)
             chunk_qoe = self.qoe_metric.bitrate_weight * self.mpd.chunks[i].bitrates[previous_bitrates[i]] + \
                         self.qoe_metric.variance_weight * abs(self.mpd.chunks[i].bitrates[previous_bitrates[i]] - self.mpd.chunks[i - 1].bitrates[previous_bitrates[i - 1]]) + \
                         self.qoe_metric.rebuffer_weight * rebuffer_list[i] + \
                         self.qoe_metric.latency_weight * latency_list[i]
             qoe_list.append(chunk_qoe)
+        """
 
 
         self.time_list = time_list

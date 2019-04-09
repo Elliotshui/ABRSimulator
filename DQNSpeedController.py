@@ -52,6 +52,10 @@ class SpeedController(DQNController.Controller):
                  lmb=LAMBDA, max_memory=MAX_MEMORY, batch_size=BATCH_SIZE,
                  state_len=STATE_LEN, state_dim=STATE_DIM, num_runs=None,
                  gamma=GAMMA):
+        self.name = "DQN Speed"
+        self.training_mode = True
+        self.dummy_output = True
+
         self.simulator = simulator
         self.mpd = self.simulator.get_mpd()
         self.qoe_metric = self.simulator.get_qoe_metric()
@@ -65,7 +69,7 @@ class SpeedController(DQNController.Controller):
         self.min_eps = min_eps
 
         if lmb is None:
-            self.lmb = -np.log((min_eps + 0.0005 - self.min_eps)/(self.max_eps - self.min_eps))/(self.num_runs*len(self.mpd.chunks))
+            self.lmb = self.calc_lmb(self.num_runs)
         else:
             self.lmb = lmb
 
@@ -82,11 +86,31 @@ class SpeedController(DQNController.Controller):
         self.memory_staging = {}  # Used to match actions with outcomes
         self.steps = 0
 
-    # add functions you need here
+    def assign_simulator(self, simulator):
+        self.simulator = simulator
+        self.mpd = self.simulator.get_mpd()
+        self.qoe_metric = self.simulator.get_qoe_metric()
+
+    def reset_eps(self):
+        self.eps = self.max_eps
+        self.steps = 0
+
+    def set_lmb(self, num_runs):
+        self.lmb = self.calc_lmb(num_runs)
+
+    def calc_lmb(self, num_runs):
+        lmb = (- np.log((self.min_eps + 0.0005 - self.min_eps)
+               / (self.max_eps - self.min_eps))
+               / (num_runs*len(self.mpd.chunks)))
+        return lmb
+
     def get_next_speed(self, chunk_id, buffer_level, latency,
                        rebuffer, previous_bitrate, buffered_bitrates,
                        previous_bandwidths):
         """Return next speed according to e-greedy policy and train network."""
+        if self.dummy_output:
+            return 1
+
         time_start = time.time()
         # Operates at playback time. Playback bitrates is list of previously selected
         # bitrates, including the bitrate of chunk_id.
@@ -94,6 +118,10 @@ class SpeedController(DQNController.Controller):
 
         state = self.create_state_array(
             buffer_level, latency, previous_bitrate, buffered_bitrates, previous_bandwidths)
+
+        if not self.training_mode:
+            return self.speeds[np.argmax(self.model.predict_one(state, self.sess))]
+
         if chunk_id > 1:
             # Calculate reward for previous action and add this to the
             # previously saved list in the memory_staging dict.

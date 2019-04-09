@@ -16,7 +16,7 @@ MAX_EPS = 0.99  # Initial epsilon for e-greedy policy
 MIN_EPS = 0.001  # Minimum epsilon for e-greedy policy
 LAMBDA = 0.5  # Epsilon decay rate
 GAMMA = 0.99  # Future reward discounting factor
-BATCH_SIZE = 32  # Number of states to include in experience replay
+BATCH_SIZE = 512  # Number of states to include in experience replay
 MAX_MEMORY = 1000000  # Maximum number of experienced states to store in memory
 
 class BitrateController(DQNController.Controller):
@@ -26,6 +26,7 @@ class BitrateController(DQNController.Controller):
                  state_len=STATE_LEN, state_dim=STATE_DIM, num_runs=None):
         self.name = "DQN Bitrate"
         self.training_mode = True
+
         self.simulator = simulator
         self.mpd = self.simulator.get_mpd()
         self.qoe_metric = self.simulator.get_qoe_metric()
@@ -61,6 +62,19 @@ class BitrateController(DQNController.Controller):
         self.qoe_metric = self.simulator.get_qoe_metric()
         self.num_bitrates = len(self.mpd.chunks[0].bitrates)
 
+    def reset_eps(self):
+        self.eps = self.max_eps
+        self.steps = 0
+
+    def set_lmb(self, num_runs):
+        self.lmb = self.calc_lmb(num_runs)
+
+    def calc_lmb(self, num_runs):
+        lmb = (- np.log((self.min_eps + 0.0005 - self.min_eps)
+               / (self.max_eps - self.min_eps))
+               / (num_runs*len(self.mpd.chunks)))
+        return lmb
+
 
     # add functions you need here
     def get_next_bitrate(self, chunk_id, previous_bitrates, previous_bandwidths,
@@ -82,7 +96,7 @@ class BitrateController(DQNController.Controller):
             previous_bandwidths, allowed_bitrates)
 
         if not self.training_mode:
-            return np.argmax(self.model.predict_one(state))
+            return np.argmax(self.model.predict_one(state, self.sess))
 
         if chunk_id > 1:
             # Calculate reward for previous action and add this to the
