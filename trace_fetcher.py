@@ -1,10 +1,12 @@
 import random
 import numpy as np
-#import matplotlib.pyplot as plt # disable in order to run on server
+import matplotlib.pyplot as plt # disable in order to run on server
 import time
 from scipy.signal import savgol_filter
 import os
 
+MIN_REAL_AVG = 0.2
+MAX_REAL_AVG = 4.0
 
 class TraceFetcher:
     def __init__(self, trace_start_number=0,
@@ -16,8 +18,6 @@ class TraceFetcher:
 
         self.real_traces = real_traces
         self.trace_folder_path = trace_folder_path
-        if self.trace_folder_path:
-            self.list_of_trace_names = os.listdir(self.trace_folder_path)
 
         self.dt = dt
         self.maximum_bw = maximum_bw
@@ -124,17 +124,23 @@ class TraceFetcher:
         f = open(trace_path)
         bandwidths = []
         for line in f.readlines():
-            bandwidths.append(float(line)*6)
+            bandwidths.append(float(line)/1000)
         return bandwidths
 
     def get_random_real_trace(self, trace_length, trace_folder_path):
-        new_trace = []
-        while len(new_trace) < trace_length:
-            trace_name = random.choice(self.list_of_trace_names)
-            trace_path = trace_folder_path + "\\" + trace_name
-            new_trace += self.import_trace(trace_path)
-        if len(new_trace) > trace_length:
-            new_trace = new_trace[:trace_length]
+        list_of_trace_names = os.listdir(trace_folder_path)
+        avg_acceptable = False
+        while not avg_acceptable:
+            new_trace = []
+            while len(new_trace) < trace_length:
+                trace_name = random.choice(list_of_trace_names)
+                trace_path = trace_folder_path + "\\" + trace_name
+                new_trace += self.import_trace(trace_path)
+            if len(new_trace) > trace_length:
+                new_trace = new_trace[:trace_length]
+            trace_avg = sum(new_trace)/len(new_trace)
+            if trace_avg > MIN_REAL_AVG and trace_avg < MAX_REAL_AVG:
+                avg_acceptable = True
         return new_trace
 
     def plot_trace(self, timesteps, bandwidths):
@@ -144,6 +150,10 @@ class TraceFetcher:
         plt.ylabel('Throughput [kbps]')
         plt.show()
 
+    def plot_random_trace(self):
+        trace = self.get_random_real_trace(60, "C:\\Users\\Einar Lenneloev\\Desktop\\Traces\\cooked3")
+
+        self.plot_trace(range(len(trace)), trace)
 
 def time_test():
     generator = TraceFetcher(0)
@@ -188,5 +198,7 @@ def plot_test():
     generator.plot_trace(timesteps, bandwidths)
 
 if __name__ == "__main__":
-    time_test()
-    plot_test()
+    #time_test()
+    #plot_test()
+    trf = TraceFetcher()
+    trf.plot_random_trace()
